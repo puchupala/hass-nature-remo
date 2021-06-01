@@ -16,19 +16,28 @@ DOMAIN = "nature_remo"
 
 CONF_COOL_TEMP = "cool_temperature"
 CONF_HEAT_TEMP = "heat_temperature"
+CONF_TOGGLELIGHT_NAME = "togglelight_name"
+CONF_TOGGLELIGHT_BUTTON = "togglelight_button"
+CONF_TOGGLELIGHT_DELAY = "togglelight_delay"
 DEFAULT_COOL_TEMP = 28
 DEFAULT_HEAT_TEMP = 20
 DEFAULT_UPDATE_INTERVAL = timedelta(seconds=60)
+DEFAULT_TOGGLELIGHT_DELAY = 100
 
 CONFIG_SCHEMA = vol.Schema(
     {
         DOMAIN: vol.Schema(
             {
                 vol.Required(CONF_ACCESS_TOKEN): cv.string,
+                vol.Required(CONF_TOGGLELIGHT_NAME): cv.string,
+                vol.Required(CONF_TOGGLELIGHT_BUTTON): cv.string,
                 vol.Optional(CONF_COOL_TEMP, default=DEFAULT_COOL_TEMP): vol.Coerce(
                     int
                 ),
                 vol.Optional(CONF_HEAT_TEMP, default=DEFAULT_HEAT_TEMP): vol.Coerce(
+                    int
+                ),
+                vol.Optional(CONF_TOGGLELIGHT_DELAY, default=DEFAULT_TOGGLELIGHT_DELAY): vol.Coerce(
                     int
                 ),
             }
@@ -60,6 +69,7 @@ async def async_setup(hass, config):
 
     await discovery.async_load_platform(hass, "sensor", DOMAIN, {}, config)
     await discovery.async_load_platform(hass, "climate", DOMAIN, {}, config)
+    await discovery.async_load_platform(hass, "light", DOMAIN, {}, config)
     return True
 
 
