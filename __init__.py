@@ -60,6 +60,7 @@ async def async_setup(hass, config):
 
     await discovery.async_load_platform(hass, "sensor", DOMAIN, {}, config)
     await discovery.async_load_platform(hass, "climate", DOMAIN, {}, config)
+    await discovery.async_load_platform(hass, "media_player", DOMAIN, {}, config)
     return True
 
 
