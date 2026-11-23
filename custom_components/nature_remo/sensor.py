@@ -8,7 +8,8 @@ from homeassistant.const import (
 )
 from homeassistant.util.unit_system import UnitOfTemperature
 from homeassistant.components.sensor.const import SensorDeviceClass
-from . import DOMAIN, NatureRemoBase, NatureRemoDeviceBase
+from . import NatureRemoBase, NatureRemoDeviceBase
+from .const import DOMAIN
 from datetime import timedelta
 
 _LOGGER = logging.getLogger(__name__)

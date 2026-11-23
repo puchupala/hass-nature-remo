@@ -1,0 +1,49 @@
+{
+  "id": "appliance-meter",
+  "device": {
+    "name": "Remo E lite",
+    "id": "device-e",
+    "created_at": "2021-01-01T00:00:00Z",
+    "updated_at": "2026-11-01T00:00:00Z",
+    "mac_address": "11:22:33:44:55:66",
+    "bt_mac_address": "11:22:33:44:55:65",
+    "serial_number": "4W019090000001",
+    "firmware_version": "Remo-E-lite/1.7.2",
+    "temperature_offset": 0,
+    "humidity_offset": 0
+  },
+  "model": {
+    "id": "model-meter",
+    "manufacturer": "",
+    "name": "Smart Meter",
+    "image": "ico_smartmeter"
+  },
+  "type": "EL_SMART_METER",
+  "nickname": "Smart Meter",
+  "image": "ico_smartmeter",
+  "settings": null,
+  "aircon": null,
+  "signals": [],
+  "smart_meter": {
+    "echonetlite_properties": [
+      {
+        "name": "coefficient",
+        "epc": 211,
+        "val": "1",
+        "updated_at": "2026-11-23T08:00:00Z"
+      },
+      {
+        "name": "normal_direction_cumulative_electric_energy",
+        "epc": 224,
+        "val": "123456",
+        "updated_at": "2026-11-23T08:00:00Z"
+      },
+      {
+        "name": "measured_instantaneous",
+        "epc": 231,
+        "val": "540",
+        "updated_at": "2026-11-23T08:00:00Z"
+      }
+    ]
+  }
+}

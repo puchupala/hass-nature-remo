@@ -2,23 +2,25 @@
 import logging
 import voluptuous as vol
 
-from datetime import timedelta
 from homeassistant.helpers import config_validation as cv, discovery
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.helpers.entity import Entity
 from homeassistant.const import CONF_ACCESS_TOKEN
+from homeassistant.util import dt as dt_util
+
+from .api import NatureRemoAPI, NatureRemoError, NatureRemoRateLimitError
+from .const import (
+    CONF_COOL_TEMP,
+    CONF_HEAT_TEMP,
+    DEFAULT_COOL_TEMP,
+    DEFAULT_HEAT_TEMP,
+    DEFAULT_UPDATE_INTERVAL,
+    DOMAIN,
+)
 
 _LOGGER = logging.getLogger(__name__)
-_RESOURCE = "https://api.nature.global/1/"
 
-DOMAIN = "nature_remo"
-
-CONF_COOL_TEMP = "cool_temperature"
-CONF_HEAT_TEMP = "heat_temperature"
-DEFAULT_COOL_TEMP = 28
-DEFAULT_HEAT_TEMP = 20
-DEFAULT_UPDATE_INTERVAL = timedelta(seconds=60)
 SCAN_INTERVAL = DEFAULT_UPDATE_INTERVAL
 PARALLEL_UPDATES = 1
 
@@ -46,11 +48,31 @@ async def async_setup(hass, config):
     access_token = config[DOMAIN][CONF_ACCESS_TOKEN]
     session = async_get_clientsession(hass)
     api = NatureRemoAPI(access_token, session)
+
+    async def async_update_data():
+        """Fetch appliances and devices, mapping API errors for the coordinator."""
+        try:
+            appliances = await api.get_appliances()
+            devices = await api.get_devices()
+        except NatureRemoRateLimitError as err:
+            # Polling again before the window resets only gets rejected.
+            retry_after = None
+            if err.reset is not None:
+                delay = (err.reset - dt_util.utcnow()).total_seconds()
+                retry_after = delay if delay > 0 else None
+            raise UpdateFailed(str(err), retry_after=retry_after) from err
+        except NatureRemoError as err:
+            raise UpdateFailed(str(err)) from err
+        return {
+            "appliances": {x["id"]: x for x in appliances},
+            "devices": {x["id"]: x for x in devices},
+        }
+
     coordinator = hass.data[DOMAIN] = DataUpdateCoordinator(
         hass,
         _LOGGER,
         name="Nature Remo update",
-        update_method=api.get,
+        update_method=async_update_data,
         update_interval=DEFAULT_UPDATE_INTERVAL,
     )
     await coordinator.async_refresh()
@@ -63,46 +85,6 @@ async def async_setup(hass, config):
     await discovery.async_load_platform(hass, "sensor", DOMAIN, {}, config)
     await discovery.async_load_platform(hass, "climate", DOMAIN, {}, config)
     return True
-
-
-class NatureRemoAPI:
-    """Nature Remo API client"""
-
-    def __init__(self, access_token, session):
-        """Init API client"""
-        self._access_token = access_token
-        self._session = session
-
-    async def get(self):
-        """Get appliance and device list"""
-        _LOGGER.debug("Trying to fetch appliance and device list from API.")
-        headers = {"Authorization": f"Bearer {self._access_token}"}
-        response = await self._session.get(f"{_RESOURCE}/appliances", headers=headers)
-        if response.status == 429:
-            raise RuntimeError(f"Get Rate Limit Exceeded: {response.headers}")
-        body = await response.json()
-        try:
-            appliances = {x["id"]: x for x in body}
-        except TypeError:
-            _LOGGER.error("Invalid response body: %s", body)
-            _LOGGER.error("Invalid response headers: %s", response.headers)
-            raise
-        response = await self._session.get(f"{_RESOURCE}/devices", headers=headers)
-        if response.status == 429:
-            raise RuntimeError(f"Get Rate Limit Exceeded: {response.headers}")
-        devices = {x["id"]: x for x in await response.json()}
-        return {"appliances": appliances, "devices": devices}
-
-    async def post(self, path, data):
-        """Post any request"""
-        _LOGGER.debug("Trying to request post:%s, data:%s", path, data)
-        headers = {"Authorization": f"Bearer {self._access_token}"}
-        response = await self._session.post(
-            f"{_RESOURCE}{path}", data=data, headers=headers
-        )
-        if response.status == 429:
-            raise RuntimeError(f"Post Rate Limit Exceeded: {response.headers}")
-        return await response.json()
 
 
 class NatureRemoBase(Entity):
@@ -163,7 +145,9 @@ class NatureRemoDeviceBase(Entity):
     @property
     def should_poll(self):
         """Return the polling requirement of the entity."""
-        return True
+        # The coordinator pushes updates; polling here would trigger extra API
+        # requests and bypass the rate limit backoff.
+        return False
 
     @property
     def device_info(self):

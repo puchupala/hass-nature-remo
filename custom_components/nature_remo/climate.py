@@ -6,8 +6,11 @@ from homeassistant.components.climate.const import (ClimateEntityFeature,
                                                     HVACMode)
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import callback
+from homeassistant.exceptions import HomeAssistantError
 
-from . import CONF_COOL_TEMP, CONF_HEAT_TEMP, DOMAIN, NatureRemoBase
+from . import NatureRemoBase
+from .api import NatureRemoError
+from .const import CONF_COOL_TEMP, CONF_HEAT_TEMP, DOMAIN
 from datetime import timedelta
 
 _LOGGER = logging.getLogger(__name__)
@@ -225,11 +228,7 @@ class NatureRemoAC(NatureRemoBase, ClimateEntity):
 
     def _update(self, ac_settings, device=None):
         # hold this to determine the ac mode while it's turned-off
-        try:
-            self._remo_mode = ac_settings["mode"]
-        except KeyError as e:
-            _LOGGER.error(f"Invalid ac_settings :{ac_settings}")
-            raise e
+        self._remo_mode = ac_settings["mode"]
         try:
             self._target_temperature = float(ac_settings["temp"])
             self._last_target_temperature[self._remo_mode] = ac_settings["temp"]
@@ -256,9 +255,12 @@ class NatureRemoAC(NatureRemoBase, ClimateEntity):
         self.async_write_ha_state()
 
     async def _post(self, data):
-        response = await self._api.post(
-            f"/appliances/{self._appliance_id}/aircon_settings", data
-        )
+        try:
+            response = await self._api.set_aircon_settings(self._appliance_id, data)
+        except NatureRemoError as err:
+            raise HomeAssistantError(
+                f"Failed to update {self._name} settings: {err}"
+            ) from err
         self._update(response)
         self.async_write_ha_state()
 
