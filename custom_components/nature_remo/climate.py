@@ -1,21 +1,26 @@
 """Support for Nature Remo AC."""
 import logging
+from typing import Any
 
 from homeassistant.components.climate import ClimateEntity
 from homeassistant.components.climate.const import (ClimateEntityFeature,
                                                     HVACMode)
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import NatureRemoBase
 from .api import NatureRemoError
-from .const import CONF_COOL_TEMP, CONF_HEAT_TEMP, DOMAIN
-from datetime import timedelta
+from .const import (
+    CONF_COOL_TEMP,
+    CONF_HEAT_TEMP,
+    DEFAULT_COOL_TEMP,
+    DEFAULT_HEAT_TEMP,
+)
+from .coordinator import NatureRemoConfigEntry, NatureRemoCoordinator
+from .entity import NatureRemoApplianceEntity
 
 _LOGGER = logging.getLogger(__name__)
-SCAN_INTERVAL = timedelta(minutes=1)
-PARALLEL_UPDATES = 1
 
 SUPPORT_FLAGS = ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.FAN_MODE | ClimateEntityFeature.SWING_MODE | ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
 
@@ -38,34 +43,47 @@ MODE_REMO_TO_HA = {
 }
 
 
-async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
-    """Set up the Nature Remo AC."""
-    if discovery_info is None:
-        return
-    _LOGGER.debug("Setting up climate platform.")
-    coordinator = hass.data[DOMAIN]["coordinator"]
-    api = hass.data[DOMAIN]["api"]
-    config = hass.data[DOMAIN]["config"]
-    appliances = coordinator.data["appliances"]
-    async_add_entities(
-        [
-            NatureRemoAC(coordinator, api, appliance, config)
-            for appliance in appliances.values()
-            if appliance["type"] == "AC"
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: NatureRemoConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> None:
+    """Set up the Nature Remo AC entities, including ones added later."""
+    coordinator = entry.runtime_data
+    known: set[str] = set()
+
+    @callback
+    def add_new_entities() -> None:
+        new = [
+            appliance
+            for appliance_id, appliance in coordinator.data["appliances"].items()
+            if appliance["type"] == "AC" and appliance_id not in known
         ]
-    )
+        known.update(appliance["id"] for appliance in new)
+        if new:
+            async_add_entities(
+                NatureRemoAC(coordinator, appliance, entry.options)
+                for appliance in new
+            )
+
+    add_new_entities()
+    entry.async_on_unload(coordinator.async_add_listener(add_new_entities))
 
 
-class NatureRemoAC(NatureRemoBase, ClimateEntity):
-    """Implementation of a Nature Remo E sensor."""
+class NatureRemoAC(NatureRemoApplianceEntity, ClimateEntity):
+    """Implementation of a Nature Remo air conditioner."""
     _enable_turn_on_off_backwards_compatibility = False
 
-    def __init__(self, coordinator, api, appliance, config):
+    def __init__(
+        self,
+        coordinator: NatureRemoCoordinator,
+        appliance: dict[str, Any],
+        options: dict[str, Any],
+    ) -> None:
         super().__init__(coordinator, appliance)
-        self._api = api
         self._default_temp = {
-            HVACMode.COOL: config[CONF_COOL_TEMP],
-            HVACMode.HEAT: config[CONF_HEAT_TEMP],
+            HVACMode.COOL: options.get(CONF_COOL_TEMP, DEFAULT_COOL_TEMP),
+            HVACMode.HEAT: options.get(CONF_HEAT_TEMP, DEFAULT_HEAT_TEMP),
         }
         self._modes = appliance["aircon"]["range"]["modes"]
         self._hvac_mode = None
@@ -75,7 +93,10 @@ class NatureRemoAC(NatureRemoBase, ClimateEntity):
         self._fan_mode = None
         self._swing_mode = None
         self._last_target_temperature = {v: None for v in MODE_REMO_TO_HA}
-        self._update(appliance["settings"])
+        self._update(
+            appliance["settings"],
+            coordinator.data["devices"].get(appliance["device"]["id"]),
+        )
 
     @property
     def supported_features(self):
@@ -213,19 +234,6 @@ class NatureRemoAC(NatureRemoBase, ClimateEntity):
         _LOGGER.debug("Set swing mode: %s", swing_mode)
         await self._post({"air_direction": swing_mode})
 
-    async def async_added_to_hass(self):
-        """Subscribe to updates."""
-        self.async_on_remove(
-            self._coordinator.async_add_listener(self._update_callback)
-        )
-
-    async def async_update(self):
-        """Update the entity.
-
-        Only used by the generic entity update service.
-        """
-        await self._coordinator.async_request_refresh()
-
     def _update(self, ac_settings, device=None):
         # hold this to determine the ac mode while it's turned-off
         self._remo_mode = ac_settings["mode"]
@@ -247,19 +255,24 @@ class NatureRemoAC(NatureRemoBase, ClimateEntity):
             self._current_temperature = float(device["newest_events"]["te"]["val"])
 
     @callback
-    def _update_callback(self):
-        self._update(
-            self._coordinator.data["appliances"][self._appliance_id]["settings"],
-            self._coordinator.data["devices"][self._device["id"]],
-        )
-        self.async_write_ha_state()
+    def _handle_coordinator_update(self) -> None:
+        """Apply the latest data from the coordinator."""
+        appliance = self.coordinator.data["appliances"].get(self._appliance_id)
+        if appliance is not None:
+            self._update(
+                appliance["settings"],
+                self.coordinator.data["devices"].get(appliance["device"]["id"]),
+            )
+        super()._handle_coordinator_update()
 
     async def _post(self, data):
         try:
-            response = await self._api.set_aircon_settings(self._appliance_id, data)
+            response = await self.coordinator.api.set_aircon_settings(
+                self._appliance_id, data
+            )
         except NatureRemoError as err:
             raise HomeAssistantError(
-                f"Failed to update {self._name} settings: {err}"
+                f"Failed to update air conditioner settings: {err}"
             ) from err
         self._update(response)
         self.async_write_ha_state()

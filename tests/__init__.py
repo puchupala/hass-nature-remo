@@ -19,6 +19,7 @@ AC_SETTINGS_URL = f"{APPLIANCES_URL}/{AC_ID}/aircon_settings"
 DEVICE_ID = "device-mio"
 
 TOKEN = "test-token"
+USER_ID = "user-1"
 
 AC_ENTITY = "climate.nature_remo_air_conditioner"
 TEMPERATURE_ENTITY = "sensor.nature_remo_mio_temperature"

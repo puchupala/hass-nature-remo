@@ -1,0 +1,60 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "This Nature Remo account is already configured.",
+      "invalid_auth": "The access token was rejected by the Nature Remo API.",
+      "reauth_successful": "The access token was updated.",
+      "unique_id_mismatch": "This access token belongs to a different Nature Remo account."
+    },
+    "error": {
+      "cannot_connect": "Could not reach the Nature Remo API. Try again later.",
+      "invalid_auth": "The access token was rejected.",
+      "unknown": "Unexpected error."
+    },
+    "step": {
+      "reauth_confirm": {
+        "data": {
+          "access_token": "Access token"
+        },
+        "data_description": {
+          "access_token": "A personal access token for your Nature account."
+        },
+        "description": "The access token was rejected. Generate a new one at {token_url} and enter it here.",
+        "title": "Reauthenticate Nature Remo"
+      },
+      "user": {
+        "data": {
+          "access_token": "Access token"
+        },
+        "data_description": {
+          "access_token": "A personal access token for your Nature account."
+        },
+        "description": "Generate a personal access token at {token_url} and enter it here."
+      }
+    }
+  },
+  "issues": {
+    "deprecated_yaml": {
+      "description": "Nature Remo is now configured from the user interface. Your settings from `configuration.yaml` have been imported automatically.\n\nRemove the `nature_remo:` block from `configuration.yaml` and restart Home Assistant to dismiss this message.",
+      "title": "Nature Remo YAML configuration is no longer used"
+    },
+    "yaml_import_invalid_auth": {
+      "description": "The `nature_remo:` block in `configuration.yaml` could not be imported because its access token was rejected by the Nature Remo API.\n\nRemove the block from `configuration.yaml`, restart Home Assistant, and add the Nature Remo integration from the user interface with a valid access token.",
+      "title": "Nature Remo YAML configuration could not be imported"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "cool_temperature": "Default cooling temperature",
+          "heat_temperature": "Default heating temperature"
+        },
+        "data_description": {
+          "cool_temperature": "Target temperature used when switching to cooling for the first time.",
+          "heat_temperature": "Target temperature used when switching to heating for the first time."
+        }
+      }
+    }
+  }
+}

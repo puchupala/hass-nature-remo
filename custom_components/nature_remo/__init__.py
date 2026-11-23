@@ -1,176 +1,105 @@
 """The Nature Remo integration."""
+
 import logging
-import voluptuous as vol
+from typing import Any
 
-from homeassistant.helpers import config_validation as cv, discovery
+import probatio
+
+from homeassistant.config_entries import SOURCE_IMPORT
+from homeassistant.const import CONF_ACCESS_TOKEN, Platform
+from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers import (
+    config_validation as cv,
+    device_registry as dr,
+    issue_registry as ir,
+)
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from homeassistant.helpers.entity import Entity
-from homeassistant.const import CONF_ACCESS_TOKEN
-from homeassistant.util import dt as dt_util
+from homeassistant.helpers.typing import ConfigType
 
-from .api import NatureRemoAPI, NatureRemoError, NatureRemoRateLimitError
+from .api import NatureRemoAPI
 from .const import (
     CONF_COOL_TEMP,
     CONF_HEAT_TEMP,
     DEFAULT_COOL_TEMP,
     DEFAULT_HEAT_TEMP,
-    DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
 )
+from .coordinator import NatureRemoConfigEntry, NatureRemoCoordinator
+from .entity import remo_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
-SCAN_INTERVAL = DEFAULT_UPDATE_INTERVAL
-PARALLEL_UPDATES = 1
+PLATFORMS = [Platform.CLIMATE, Platform.SENSOR]
 
-CONFIG_SCHEMA = vol.Schema(
+# YAML configuration is deprecated: it is only read to import it into a config entry.
+CONFIG_SCHEMA = probatio.Schema(
     {
-        DOMAIN: vol.Schema(
+        DOMAIN: probatio.Schema(
             {
-                vol.Required(CONF_ACCESS_TOKEN): cv.string,
-                vol.Optional(CONF_COOL_TEMP, default=DEFAULT_COOL_TEMP): vol.Coerce(
-                    int
-                ),
-                vol.Optional(CONF_HEAT_TEMP, default=DEFAULT_HEAT_TEMP): vol.Coerce(
-                    int
-                ),
+                probatio.Required(CONF_ACCESS_TOKEN): cv.string,
+                probatio.Optional(
+                    CONF_COOL_TEMP, default=DEFAULT_COOL_TEMP
+                ): probatio.Coerce(int),
+                probatio.Optional(
+                    CONF_HEAT_TEMP, default=DEFAULT_HEAT_TEMP
+                ): probatio.Coerce(int),
             }
         )
     },
-    extra=vol.ALLOW_EXTRA,
+    extra=probatio.ALLOW_EXTRA,
 )
 
 
-async def async_setup(hass, config):
-    """Set up Nature Remo component."""
-    _LOGGER.debug("Setting up Nature Remo component.")
-    access_token = config[DOMAIN][CONF_ACCESS_TOKEN]
-    session = async_get_clientsession(hass)
-    api = NatureRemoAPI(access_token, session)
-
-    async def async_update_data():
-        """Fetch appliances and devices, mapping API errors for the coordinator."""
-        try:
-            appliances = await api.get_appliances()
-            devices = await api.get_devices()
-        except NatureRemoRateLimitError as err:
-            # Polling again before the window resets only gets rejected.
-            retry_after = None
-            if err.reset is not None:
-                delay = (err.reset - dt_util.utcnow()).total_seconds()
-                retry_after = delay if delay > 0 else None
-            raise UpdateFailed(str(err), retry_after=retry_after) from err
-        except NatureRemoError as err:
-            raise UpdateFailed(str(err)) from err
-        return {
-            "appliances": {x["id"]: x for x in appliances},
-            "devices": {x["id"]: x for x in devices},
-        }
-
-    coordinator = hass.data[DOMAIN] = DataUpdateCoordinator(
-        hass,
-        _LOGGER,
-        name="Nature Remo update",
-        update_method=async_update_data,
-        update_interval=DEFAULT_UPDATE_INTERVAL,
-    )
-    await coordinator.async_refresh()
-    hass.data[DOMAIN] = {
-        "api": api,
-        "coordinator": coordinator,
-        "config": config[DOMAIN],
-    }
-
-    await discovery.async_load_platform(hass, "sensor", DOMAIN, {}, config)
-    await discovery.async_load_platform(hass, "climate", DOMAIN, {}, config)
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Import the YAML configuration, if there is any."""
+    if DOMAIN in config:
+        hass.async_create_task(_async_import_yaml(hass, dict(config[DOMAIN])))
     return True
 
 
-class NatureRemoBase(Entity):
-    """Nature Remo entity base class."""
-
-    def __init__(self, coordinator, appliance):
-        self._coordinator = coordinator
-        self._name = f"Nature Remo {appliance['nickname']}"
-        self._appliance_id = appliance["id"]
-        self._device = appliance["device"]
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return self._name
-
-    @property
-    def unique_id(self):
-        """Return a unique ID."""
-        return self._appliance_id
-
-    @property
-    def should_poll(self):
-        """Return the polling requirement of the entity."""
-        return False
-
-    @property
-    def device_info(self):
-        """Return the device info for the sensor."""
-        # Since device registration requires Config Entries, this dosen't work for now
-        return {
-            "identifiers": {(DOMAIN, self._device["id"])},
-            "name": self._device["name"],
-            "manufacturer": "Nature Remo",
-            "model": self._device["serial_number"],
-            "sw_version": self._device["firmware_version"],
-        }
+async def _async_import_yaml(hass: HomeAssistant, conf: dict[str, Any]) -> None:
+    """Turn the YAML configuration into a config entry and tell the user."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_IMPORT}, data=conf
+    )
+    if (
+        result.get("type") is FlowResultType.ABORT
+        and result.get("reason") == "invalid_auth"
+    ):
+        issue = "yaml_import_invalid_auth"
+    else:
+        # Imported now, or already imported on an earlier start.
+        issue = "deprecated_yaml"
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        issue,
+        is_fixable=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key=issue,
+    )
 
 
-class NatureRemoDeviceBase(Entity):
-    """Nature Remo Device entity base class."""
+async def async_setup_entry(hass: HomeAssistant, entry: NatureRemoConfigEntry) -> bool:
+    """Set up Nature Remo from a config entry."""
+    api = NatureRemoAPI(entry.data[CONF_ACCESS_TOKEN], async_get_clientsession(hass))
+    coordinator = NatureRemoCoordinator(hass, entry, api)
+    # Raises ConfigEntryNotReady on failure, so Home Assistant retries the setup.
+    await coordinator.async_config_entry_first_refresh()
+    entry.runtime_data = coordinator
 
-    def __init__(self, coordinator, device):
-        self._coordinator = coordinator
-        self._name = f"Nature Remo {device['name']}"
-        self._device = device
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return self._name
-
-    @property
-    def unique_id(self):
-        """Return a unique ID."""
-        return self._device["id"]
-
-    @property
-    def should_poll(self):
-        """Return the polling requirement of the entity."""
-        # The coordinator pushes updates; polling here would trigger extra API
-        # requests and bypass the rate limit backoff.
-        return False
-
-    @property
-    def device_info(self):
-        """Return the device info for the sensor."""
-        # Since device registration requires Config Entries, this dosen't work for now
-        return {
-            "identifiers": {(DOMAIN, self._device["id"])},
-            "name": self._device["name"],
-            "manufacturer": "Nature Remo",
-            "model": self._device["serial_number"],
-            "sw_version": self._device["firmware_version"],
-        }
-
-    async def async_added_to_hass(self):
-        """Subscribe to updates."""
-        self.async_on_remove(
-            self._coordinator.async_add_listener(self.async_write_ha_state)
+    # Register the Remo devices first so that appliances can be linked to them.
+    device_registry = dr.async_get(hass)
+    for device in coordinator.data["devices"].values():
+        device_registry.async_get_or_create_from_info(
+            config_entry_id=entry.entry_id, device_info=remo_device_info(device)
         )
 
-    async def async_update(self):
-        """Update the entity.
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    return True
 
-        Only used by the generic entity update service.
-        """
-        await self._coordinator.async_request_refresh()
 
+async def async_unload_entry(hass: HomeAssistant, entry: NatureRemoConfigEntry) -> bool:
+    """Unload a config entry."""
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

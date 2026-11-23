@@ -4,7 +4,9 @@
   "codeowners": [
     "@puchupala"
   ],
+  "config_flow": true,
   "documentation": "https://github.com/puchupala/hass-nature-remo",
+  "integration_type": "hub",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/puchupala/hass-nature-remo/issues",
   "version": "0.6.0"
