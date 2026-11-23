@@ -8,8 +8,11 @@ from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import callback
 
 from . import CONF_COOL_TEMP, CONF_HEAT_TEMP, DOMAIN, NatureRemoBase
+from datetime import timedelta
 
 _LOGGER = logging.getLogger(__name__)
+SCAN_INTERVAL = timedelta(minutes=1)
+PARALLEL_UPDATES = 1
 
 SUPPORT_FLAGS = ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.FAN_MODE | ClimateEntityFeature.SWING_MODE | ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
 
@@ -117,7 +120,8 @@ class NatureRemoAC(NatureRemoBase, ClimateEntity):
             step = round(temp_range[1] - temp_range[0], 1)
             if step in [1.0, 0.5]:  # valid steps
                 return step
-        return 1
+        return 1.0
+        # return 1.0
 
     @property
     def hvac_mode(self):
@@ -221,8 +225,12 @@ class NatureRemoAC(NatureRemoBase, ClimateEntity):
         await self._coordinator.async_request_refresh()
 
     def _update(self, ac_settings, device=None):
-        # hold this to determin the ac mode while it's turned-off
-        self._remo_mode = ac_settings["mode"]
+        # hold this to determine the ac mode while it's turned-off
+        try:
+            self._remo_mode = ac_settings["mode"]
+        except KeyError as e:
+            _LOGGER.error(f"Invalid ac_settings :{ac_settings}")
+            raise e
         try:
             self._target_temperature = float(ac_settings["temp"])
             self._last_target_temperature[self._remo_mode] = ac_settings["temp"]

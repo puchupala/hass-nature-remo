@@ -19,6 +19,8 @@ CONF_HEAT_TEMP = "heat_temperature"
 DEFAULT_COOL_TEMP = 28
 DEFAULT_HEAT_TEMP = 20
 DEFAULT_UPDATE_INTERVAL = timedelta(seconds=60)
+SCAN_INTERVAL = DEFAULT_UPDATE_INTERVAL
+PARALLEL_UPDATES = 1
 
 CONFIG_SCHEMA = vol.Schema(
     {
@@ -76,7 +78,14 @@ class NatureRemoAPI:
         _LOGGER.debug("Trying to fetch appliance and device list from API.")
         headers = {"Authorization": f"Bearer {self._access_token}"}
         response = await self._session.get(f"{_RESOURCE}/appliances", headers=headers)
-        appliances = {x["id"]: x for x in await response.json()}
+        if response.status == 429:
+            raise RuntimeError(f"Get Rate Limit Exceeded: {response.headers}")
+        try:
+            appliances = {x["id"]: x for x in await response.json()}
+        except TypeError as e:
+            _LOGGER.error(f"Invalid response body: {str(response.json())}")
+            _LOGGER.error(f"Invalid response headers: {response.headers}")
+            raise e
         response = await self._session.get(f"{_RESOURCE}/devices", headers=headers)
         devices = {x["id"]: x for x in await response.json()}
         return {"appliances": appliances, "devices": devices}
@@ -88,6 +97,8 @@ class NatureRemoAPI:
         response = await self._session.post(
             f"{_RESOURCE}{path}", data=data, headers=headers
         )
+        if response.status == 429:
+            raise RuntimeError(f"Post Rate Limit Exceeded: {response.headers}")
         return await response.json()
 
 
