@@ -23,15 +23,23 @@ Yet another [Home Assistant](https://www.home-assistant.io) component for [Natur
 - [X] Others
   - [X] Fetch sensor data
 
-Tested on Home Assistant Core 2021.3.3 on Docker
+Tested on Home Assistant Core 2026.11.2 on Home Assistant OS
 
 ## Installation
+
+### Install via Marketplace (recommended)
+
+Requires Home Assistant 2026.11 or later.
+
+1. Go to **Settings** > **Marketplace**
+1. Select **Add from link** in the upper-right corner
+1. Enter `puchupala/hass-nature-remo` and select **Add** (choose **Integration** if asked for a type)
+1. Select **Install**, then restart Home Assistant
 
 ### Manual Install
 
 1. Download this repository
-1. Create `custom_components/nature_remo` folder at your config directory
-1. Copy files into it (Just drag&drop whole files would be fine)
+1. Copy the `custom_components/nature_remo` folder into the `custom_components` folder of your config directory
 
 ```
 {path_to_your_config}
@@ -42,14 +50,6 @@ Tested on Home Assistant Core 2021.3.3 on Docker
         ├── climate.py
         ├── manifest.json
         └── sensor.py
-```
-
-### Install via git submodule
-
-If you have set up git, you can also install this component by adding submodule to your git repository.
-
-```sh
-git submodule add https://github.com/yutoyazaki/hass-nature-remo.git {path_to_custom_component}/nature_remo
 ```
 
 ## Configuration
