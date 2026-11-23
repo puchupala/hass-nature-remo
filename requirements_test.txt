@@ -1,0 +1,3 @@
+# Test dependencies. pytest-homeassistant is released together with Home Assistant
+# and pins the matching homeassistant version.
+pytest-homeassistant==2026.11.2
