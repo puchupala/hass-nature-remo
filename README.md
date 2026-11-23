@@ -8,7 +8,7 @@ Yet another [Home Assistant](https://www.home-assistant.io) component for [Natur
 
 ## Supported features
 
-- [x] Air Conditionar
+- [x] Air Conditioner
   - [x] Set mode (e.g. cool, warm, blow etc.)
   - [x] Set temperature
   - [x] Set fan mode
@@ -17,13 +17,16 @@ Yet another [Home Assistant](https://www.home-assistant.io) component for [Natur
   - [x] Remember previous target temperatures when switching modes back and forth
 - [x] Energy Sensor (Nature Remo E/E Lite)
   - [x] Fetch current power usage
+- [x] Remo sensors
+  - [x] Temperature, humidity and illuminance
 - [ ] Switch
 - [ ] Light
 - [ ] TV
-- [X] Others
-  - [X] Fetch sensor data
 
-Tested on Home Assistant Core 2026.11.2 on Home Assistant OS
+Requires Home Assistant 2026.11 or later. Tested on Home Assistant Core 2026.11.2 on Home Assistant OS.
+
+Home Assistant also ships a built-in Nature Remo integration (sensors only). This custom
+integration uses the same domain and replaces it while installed.
 
 ## Installation
 
@@ -41,24 +44,31 @@ Requires Home Assistant 2026.11 or later.
 1. Download this repository
 1. Copy the `custom_components/nature_remo` folder into the `custom_components` folder of your config directory
 
-```
-{path_to_your_config}
-├── configuration.yaml
-└── custom_components
-    └── nature_remo
-        ├── __init__.py
-        ├── climate.py
-        ├── manifest.json
-        └── sensor.py
-```
 
 ## Configuration
 
 1. Go to https://home.nature.global and sign in/up
-1. Generate access token
-1. Add following codes to your `configuration.yaml` file
+1. Generate an access token
+1. In Home Assistant, go to **Settings** > **Devices & services** > **Add integration**, select **Nature Remo** and enter the access token
+
+The default target temperatures used when switching to cooling or heating for the first
+time can be changed with **Configure** on the integration.
+
+### Migrating from YAML
+
+Configuration through `configuration.yaml` is no longer used. An existing block like the one
+below is imported automatically the first time Home Assistant starts with this version;
+entities keep their entity IDs. Remove the block afterwards.
 
 ```yaml
 nature_remo:
   access_token: YOUR_ACCESS_TOKEN
+```
+
+## Development
+
+```sh
+uv venv --python 3.14 .venv
+uv pip install --python .venv/bin/python -r requirements_test.txt
+.venv/bin/python -m pytest
 ```

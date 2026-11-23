@@ -1,20 +1,49 @@
 """Support for Nature Remo sensors."""
-import logging
 
-from homeassistant.const import (
-    UnitOfPower,
-    PERCENTAGE,
-    LIGHT_LUX,
+from typing import Any
+
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorEntityDescription,
+    SensorStateClass,
 )
+from homeassistant.const import LIGHT_LUX, PERCENTAGE, UnitOfPower, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.util.unit_system import UnitOfTemperature
-from homeassistant.components.sensor.const import SensorDeviceClass
 
-from .coordinator import NatureRemoConfigEntry
+from .coordinator import NatureRemoConfigEntry, NatureRemoCoordinator
 from .entity import NatureRemoApplianceEntity, NatureRemoDeviceEntity
 
-_LOGGER = logging.getLogger(__name__)
+APPLIANCE_TYPE_SMART_METER = "EL_SMART_METER"
+# ECHONET Lite property holding the measured instantaneous power, in watts.
+EPC_MEASURED_INSTANTANEOUS = 231
+
+# One sensor per event the Remo reports. The key is the API's event name and
+# is part of the unique ID.
+DEVICE_SENSORS = (
+    SensorEntityDescription(
+        key="te",
+        name="Temperature",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    SensorEntityDescription(
+        key="hu",
+        name="Humidity",
+        device_class=SensorDeviceClass.HUMIDITY,
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    SensorEntityDescription(
+        key="il",
+        name="Illuminance",
+        device_class=SensorDeviceClass.ILLUMINANCE,
+        native_unit_of_measurement=LIGHT_LUX,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+)
 
 
 async def async_setup_entry(
@@ -28,15 +57,17 @@ async def async_setup_entry(
 
     @callback
     def add_new_entities() -> None:
-        entities = [
-            NatureRemoE(coordinator, appliance)
+        entities: list[SensorEntity] = [
+            NatureRemoPowerSensor(coordinator, appliance)
             for appliance in coordinator.data["appliances"].values()
-            if appliance["type"] == "EL_SMART_METER"
+            if appliance["type"] == APPLIANCE_TYPE_SMART_METER
         ]
-        for device in coordinator.data["devices"].values():
-            for event in device["newest_events"]:
-                if sensor_class := DEVICE_SENSORS.get(event):
-                    entities.append(sensor_class(coordinator, device))
+        entities.extend(
+            NatureRemoDeviceSensor(coordinator, device, description)
+            for device in coordinator.data["devices"].values()
+            for description in DEVICE_SENSORS
+            if description.key in device.get("newest_events", {})
+        )
         new = [entity for entity in entities if entity.unique_id not in known]
         known.update(entity.unique_id for entity in new)
         if new:
@@ -46,109 +77,44 @@ async def async_setup_entry(
     entry.async_on_unload(coordinator.async_add_listener(add_new_entities))
 
 
-class NatureRemoE(NatureRemoApplianceEntity):
-    """Implementation of a Nature Remo E sensor."""
+class NatureRemoPowerSensor(NatureRemoApplianceEntity, SensorEntity):
+    """The power currently measured by a smart meter (Nature Remo E)."""
 
-    def __init__(self, coordinator, appliance):
-        super().__init__(coordinator, appliance)
-        self._unit_of_measurement = UnitOfPower.WATT
-
-    @property
-    def state(self):
-        """Return the state of the sensor."""
-        smart_meter = self.appliance["smart_meter"]
-        echonetlite_properties = smart_meter["echonetlite_properties"]
-        measured_instantaneous = next(
-            value["val"] for value in echonetlite_properties if value["epc"] == 231
-        )
-        _LOGGER.debug("Current state: %sW", measured_instantaneous)
-        return measured_instantaneous
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_native_unit_of_measurement = UnitOfPower.WATT
+    _attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
-    def unit_of_measurement(self):
-        """Return the unit of measurement of this entity, if any."""
-        return UnitOfPower.WATT
+    def native_value(self) -> int | None:
+        """Return the measured instantaneous power."""
+        properties = (self.appliance.get("smart_meter") or {}).get(
+            "echonetlite_properties"
+        ) or []
+        for echonet_property in properties:
+            if echonet_property.get("epc") == EPC_MEASURED_INSTANTANEOUS:
+                try:
+                    return int(echonet_property["val"])
+                except (KeyError, TypeError, ValueError):
+                    return None
+        return None
 
-    @property
-    def device_class(self):
-        """Return the device class."""
-        return SensorDeviceClass.power
 
+class NatureRemoDeviceSensor(NatureRemoDeviceEntity, SensorEntity):
+    """A sensor built into a Nature Remo."""
 
-class NatureRemoTemperatureSensor(NatureRemoDeviceEntity):
-    """Implementation of a Nature Remo sensor."""
-
-    def __init__(self, coordinator, device):
+    def __init__(
+        self,
+        coordinator: NatureRemoCoordinator,
+        device: dict[str, Any],
+        description: SensorEntityDescription,
+    ) -> None:
+        """Initialize from the device as returned by the API."""
         super().__init__(coordinator, device)
-        self._attr_unique_id = f"{device['id']}-te"
-        self._attr_name = "Temperature"
+        self.entity_description = description
+        self._attr_unique_id = f"{device['id']}-{description.key}"
 
     @property
-    def unit_of_measurement(self):
-        """Return the unit of measurement of this entity, if any."""
-        return UnitOfTemperature.CELSIUS
-
-    @property
-    def state(self):
-        """Return the state of the sensor."""
-        return self.device["newest_events"]["te"]["val"]
-
-    @property
-    def device_class(self):
-        """Return the device class."""
-        return SensorDeviceClass.TEMPERATURE
-
-
-class NatureRemoHumiditySensor(NatureRemoDeviceEntity):
-    """Implementation of a Nature Remo sensor."""
-
-    def __init__(self, coordinator, device):
-        super().__init__(coordinator, device)
-        self._attr_unique_id = f"{device['id']}-hu"
-        self._attr_name = "Humidity"
-
-    @property
-    def unit_of_measurement(self):
-        """Return the unit of measurement of this entity, if any."""
-        return PERCENTAGE
-
-    @property
-    def state(self):
-        """Return the state of the sensor."""
-        return self.device["newest_events"]["hu"]["val"]
-
-    @property
-    def device_class(self):
-        """Return the device class."""
-        return SensorDeviceClass.HUMIDITY
-
-
-class NatureRemoIlluminanceSensor(NatureRemoDeviceEntity):
-    """Implementation of a Nature Remo sensor."""
-
-    def __init__(self, coordinator, device):
-        super().__init__(coordinator, device)
-        self._attr_unique_id = f"{device['id']}-il"
-        self._attr_name = "Illuminance"
-
-    @property
-    def unit_of_measurement(self):
-        """Return the unit of measurement of this entity, if any."""
-        return LIGHT_LUX
-
-    @property
-    def state(self):
-        """Return the state of the sensor."""
-        return self.device["newest_events"]["il"]["val"]
-
-    @property
-    def device_class(self):
-        """Return the device class."""
-        return SensorDeviceClass.ILLUMINANCE
-
-
-DEVICE_SENSORS = {
-    "te": NatureRemoTemperatureSensor,
-    "hu": NatureRemoHumiditySensor,
-    "il": NatureRemoIlluminanceSensor,
-}
+    def native_value(self) -> float | None:
+        """Return the latest value the Remo reported."""
+        event = self.device.get("newest_events", {}).get(self.entity_description.key)
+        return event.get("val") if event else None
