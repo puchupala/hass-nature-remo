@@ -121,7 +121,6 @@ class NatureRemoAC(NatureRemoBase, ClimateEntity):
             if step in [1.0, 0.5]:  # valid steps
                 return step
         return 1.0
-        # return 1.0
 
     @property
     def hvac_mode(self):

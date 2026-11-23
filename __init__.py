@@ -80,13 +80,16 @@ class NatureRemoAPI:
         response = await self._session.get(f"{_RESOURCE}/appliances", headers=headers)
         if response.status == 429:
             raise RuntimeError(f"Get Rate Limit Exceeded: {response.headers}")
+        body = await response.json()
         try:
-            appliances = {x["id"]: x for x in await response.json()}
-        except TypeError as e:
-            _LOGGER.error(f"Invalid response body: {str(response.json())}")
-            _LOGGER.error(f"Invalid response headers: {response.headers}")
-            raise e
+            appliances = {x["id"]: x for x in body}
+        except TypeError:
+            _LOGGER.error("Invalid response body: %s", body)
+            _LOGGER.error("Invalid response headers: %s", response.headers)
+            raise
         response = await self._session.get(f"{_RESOURCE}/devices", headers=headers)
+        if response.status == 429:
+            raise RuntimeError(f"Get Rate Limit Exceeded: {response.headers}")
         devices = {x["id"]: x for x in await response.json()}
         return {"appliances": appliances, "devices": devices}
 
